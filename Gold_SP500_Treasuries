@@ -1,0 +1,230 @@
+import pandas as pd, numpy as np
+import yfinance as yf
+import datetime as dt
+import re
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set()
+plt.rcParams['figure.figsize'] = [10,6]
+plt.rcParams["font.weight"] = "bold"
+plt.rcParams["axes.labelweight"] = "bold"
+plt.rcParams["font.size"] = 15
+plt.rcParams["axes.labelweight"] = "bold"
+
+#==============================================================================
+#                 Preparacion de los datos
+#==============================================================================
+
+#https://www.gold.org/goldhub/data/gold-prices
+gold = pd.read_excel("/Users/ciser/Downloads/precio_oro.xlsx", index_col=0,
+                     usecols=[0,1])
+
+#https://datahub.io/core/s-and-p-500
+sp500 = pd.read_csv("/Users/ciser/Downloads/data_csv.csv", index_col=0)
+sp500 = sp500[sp500.index >= "1977-12-29"]
+
+div_yield, year = [], []
+
+for i in range(len(sp500)):
+    if re.search("[0-9][0-9][0-9][0-9]-12", sp500.index[i]):
+        year.append(sp500.index[i])
+        div_yield.append(sp500["Dividend"][i]/sp500["SP500"][i])
+
+div_yield.append(0.0209)
+div_yield.append(0.0183)
+year.append("2018-12-01")
+year.append("2019-12-01")
+annual_divs = pd.DataFrame(div_yield, index=year, columns=["Div_yield"])
+annual_divs.index = pd.to_datetime(annual_divs.index)
+annual_divs["Cum_yield"] = (1+annual_divs["Div_yield"]).cumprod()-1
+
+# Datos diarios SP500, no traen ajuste por dividendos
+start = gold.index[0]
+end = dt.date.today()
+data = yf.download("^GSPC", start, end)["Adj Close"]
+
+sp500_div_adj = pd.merge(left=data, right=annual_divs["Cum_yield"], how="outer",
+                         left_on="Date", right_on= annual_divs.index)
+sp500_div_adj = sp500_div_adj.set_index("Date").sort_index()
+sp500_div_adj["Cum_yield"].fillna(method="ffill", inplace=True)
+sp500_div_adj.dropna(inplace=True)
+sp500_div_adj["definitivo"] = sp500_div_adj["Adj Close"]*(1+sp500_div_adj["Cum_yield"])
+
+spy_gld = pd.merge(left=sp500_div_adj["definitivo"], right=gold, how="outer",
+                   left_on="Date", right_on="Date")
+
+spy_gld.sort_index(inplace=True)
+spy_gld["definitivo"].isna().value_counts()
+spy_gld["Gold in usd"].isna().value_counts()
+spy_gld.fillna(method="ffill", inplace=True)
+
+#==============================================================================
+#                    CORRELACION ORO_SP500 EN CRISIS
+#==============================================================================
+
+subprime_correlation = spy_gld.loc["2008-09-05":"2009-03-05"].corr(method="pearson")
+covid19_correlation = spy_gld.loc["2020-01-05":].corr(method="pearson")
+
+#==============================================================================
+#                    TREASURIES 5Y
+#==============================================================================
+#https://www.macrotrends.net/2522/5-year-treasury-bond-rate-yield-chart
+#https://www.macrotrends.net/2492/1-year-treasury-rate-yield-chart
+#treasuries = pd.read_csv("/Users/ciser/Downloads/5-year-treasury-bond-rate-yield-chart.csv", index_col=0, header=8)
+treasuries = pd.read_csv("/Users/ciser/Downloads/1-year-treasury-rate-yield-chart.csv", index_col=0, header=8)
+
+treasuries.columns = ["rate"]
+treasuries.index = pd.to_datetime(treasuries.index)
+treasuries["5yr_price"] = 100/((1+(treasuries["rate"]/100))**5)
+treasuries.dropna(inplace=True)
+treasuries = treasuries[treasuries.index >= "1977-12-29"]
+
+treasuries2 = treasuries.resample("Y").mean()
+treasuries2 = treasuries2[treasuries2.index >= "1979-12-29"]
+treasuries2["accumulated_return"] = (1+treasuries2["rate"]/100).cumprod()-1
+
+treasuries["accum_var"] = treasuries2["accumulated_return"][-1]
+treasuries["temp"] = range(1, len(treasuries)+1)
+treasuries["factor"] = (1+treasuries["accum_var"])**(treasuries["temp"] / len(treasuries))
+treasuries["5yr_price_index"] = treasuries["5yr_price"] * treasuries["factor"]
+#==============================================================================
+spy_gld_tre = pd.merge(left=spy_gld, right=treasuries["5yr_price_index"], how="outer",
+                       left_on=spy_gld.index, right_on="date")
+spy_gld_tre.set_index("date", inplace=True)
+spy_gld_tre.sort_index(inplace=True)
+spy_gld_tre.dropna(inplace=True)
+
+yields = spy_gld_tre.pct_change()
+#==============================================================================
+#                 Cagr y volatilidad
+#==============================================================================
+
+#rendimiento acumulado
+accum_gld = (spy_gld_tre["Gold in usd"][-1]/spy_gld_tre["Gold in usd"][0]-1)
+accum_spy = (spy_gld_tre["definitivo"][-1]/spy_gld_tre["definitivo"][0]-1)
+accum_5yr = (spy_gld_tre["5yr_price_index"][-1]/spy_gld_tre["5yr_price_index"][0]-1)
+#cagr
+tiempo = spy_gld_tre.index[-1] - spy_gld_tre.index[0]
+años = tiempo.days/365
+cagr_sp500 = ((1+accum_spy)**(1/años))-1 # chequeado con https://dqydj.com/sp-500-return-calculator/
+#cagr sp500 desde 1871 = 9.02%
+cagr_gld = ((1+accum_gld)**(1/años))-1
+cagr_5yr = ((1+accum_5yr)**(1/años))-1
+#volatilidad anualizada
+volatility_gld = yields["Gold in usd"].std()*np.sqrt(252)
+volatility_sp500 = yields["definitivo"].std()*np.sqrt(252)
+volatility_5yr = yields["5yr_price_index"].std()*np.sqrt(252)
+
+risk_free = cagr_5yr
+#==============================================================================
+#                  Combinaciones aleatorias
+#==============================================================================
+combinaciones = 10000
+assets = ["SP500", "GLD", "5YR"]
+pond, returns, volatility, sharpe = [], [], [], []
+for portfol in range(combinaciones):
+    #ponderacion aleatoria
+    weights = np.random.random_sample(len(assets))
+    weights = weights/weights.sum()
+    pond.append(weights)
+    yields2 = yields.copy()
+    yields2["portfolio_daily_ret"] = (weights*yields).sum(axis=1)
+    yields2["acum_ret"] = (1+yields2["portfolio_daily_ret"]).cumprod()-1
+    retorno = ((1+yields2["acum_ret"][-1])**(1/años))-1
+    returns.append(retorno)
+    
+    volatilidad = yields2["portfolio_daily_ret"].std() * np.sqrt(252)
+    volatility.append(volatilidad)
+    
+    sharpe.append((retorno-risk_free)/volatilidad)
+
+datos = pd.DataFrame({"retornos": returns,
+                     "volatilidad": volatility,
+                     "sharpe": sharpe,
+                     "ponderaciones": pond})
+
+#combinacion eficiente
+opt_v = datos.iloc[datos["sharpe"].idxmax()]["volatilidad"]
+opt_r = datos.iloc[datos["sharpe"].idxmax()]["retornos"]
+
+min_risk_v = datos.iloc[datos["volatilidad"].idxmin()]["volatilidad"]
+min_risk_r = datos.iloc[datos["volatilidad"].idxmin()]["retornos"]
+#==============================================================================
+#                 Graficos
+#==============================================================================
+plt.title("COMBINACIONES DE ORO, S&P 500 Y TREASURIES (1978-2020)", fontweight="bold")
+plt.scatter(datos["volatilidad"], datos["retornos"], c= datos["sharpe"])
+plt.colorbar(label='SHARPE RATIO')
+plt.scatter(volatility_sp500, cagr_sp500, label="100% S&P 500", color="lightsalmon",edgecolors="k")
+plt.scatter(volatility_gld , cagr_gld, label="100% ORO", color="k",edgecolors="r")
+plt.scatter(volatility_5yr, cagr_5yr, label="100% 5Y-Treasuries", color="purple", edgecolors="k")
+plt.xlabel('VOLATILIDAD', fontsize=12, fontweight="bold")
+plt.ylabel('RETORNO', fontsize=12, fontweight="bold")
+#plt.legend()
+plt.annotate("100% S&P 500", weight ='bold', xy=(volatility_sp500,cagr_sp500), xytext=(volatility_sp500*.9,cagr_sp500*1.01))
+plt.annotate("100% Treasuries", weight ='bold', xy=(volatility_5yr,cagr_5yr), xytext=(volatility_5yr*.8,cagr_5yr*.9))
+plt.annotate("100% Oro", weight ='bold', xy=(volatility_gld,cagr_gld), xytext=(volatility_gld*0.9,cagr_gld*.9))
+plt.annotate("Óptimo", weight ='bold', xy=(opt_v, opt_r), xytext=(.09, .11),
+             arrowprops=dict(arrowstyle="->", connectionstyle='arc3,rad=0.95', color="k"))
+plt.scatter(opt_v, opt_r, color="w",edgecolors="k")
+plt.annotate("Riesgo", weight ='bold', xy=(min_risk_v, min_risk_r), xytext=(.05, .09),
+             arrowprops=dict(arrowstyle="->",connectionstyle='arc3,rad=-0.65', color="k"))
+plt.scatter(min_risk_v, min_risk_r, color="r",edgecolors="k")
+plt.show()
+
+#==============================================================================
+spy_gld_tre["spy_1"] = spy_gld_tre["definitivo"]/spy_gld_tre["definitivo"].iloc[0]
+spy_gld_tre["gld_1"] = spy_gld_tre["Gold in usd"]/spy_gld_tre["Gold in usd"].iloc[0]
+spy_gld_tre["tre_1"] = spy_gld_tre["5yr_price_index"]/spy_gld_tre["5yr_price_index"].iloc[0]
+
+plt.title("S&P 500, ORO Y TREASURIES")
+plt.plot(spy_gld_tre["spy_1"], label="S&P 500")
+plt.plot(spy_gld_tre["gld_1"], label="Oro")
+plt.plot(spy_gld_tre["tre_1"], label="Treasuries")
+plt.legend()
+plt.show()
+
+spy_gld_tre["spy_1"] = spy_gld_tre["definitivo"]/spy_gld_tre["definitivo"].loc["2000-01-04"]
+spy_gld_tre["gld_1"] = spy_gld_tre["Gold in usd"]/spy_gld_tre["Gold in usd"].loc["2000-01-04"]
+spy_gld_tre["tre_1"] = spy_gld_tre["5yr_price_index"]/spy_gld_tre["5yr_price_index"].loc["2000-01-04"]
+
+plt.title("S&P 500, ORO Y TREASURIES")
+plt.plot(spy_gld_tre["spy_1"].loc["2000-01-04":"2008-01-04"], label="S&P 500")
+plt.plot(spy_gld_tre["gld_1"].loc["2000-01-04":"2008-01-04"], label="Oro")
+#plt.plot(spy_gld_tre["tre_1"].loc["2000-01-04":"2008-01-04"], label="Treasuries")
+plt.legend()
+plt.show()
+
+#==============================================================================
+#                 ORO AJUSTADO POR INFLACION
+#==============================================================================
+#https://fred.stlouisfed.org/series/FPCPITOTLZGUSA
+infla_indx = pd.read_csv("/Users/ciser/Downloads/FPCPITOTLZGUSA.csv")
+infla_indx["DATE"] = pd.to_datetime(infla_indx["DATE"])
+infla_indx.set_index("DATE", inplace=True)
+
+inflation =  infla_indx[infla_indx.index>="1978-01-01"].div(100)[::-1]
+inflation.columns = ["annual"]
+inflation["acum"] = inflation["annual"].add(1).cumprod()-1
+inflation = inflation.drop(["annual"], axis=1)
+
+gld_adj = pd.merge(left=gold, right=inflation, how="outer",
+                    left_on=gold.index, right_on="DATE")
+
+gld_adj = gld_adj.sort_values("DATE").set_index("DATE")
+gld_adj["acum"].loc["2020-01-02"] = 0
+gld_adj["acum"].fillna(method="ffill", inplace=True)
+
+gld_adj2 = (gld_adj["Gold in usd"]*(1+gld_adj["acum"])).to_frame().dropna()
+gld_adj2.columns = ["gold_inflation_adj"]
+
+#outliers
+gld_adj2["gold_inflation_adj"].loc["1980-01-18"] = gld_adj2["gold_inflation_adj"].loc["1980-01-17"]
+gld_adj2["gold_inflation_adj"].loc["1980-01-21"] = gld_adj2["gold_inflation_adj"].loc["1980-01-22"]
+gld_adj2["gold_inflation_adj"].idxmax()
+#grafico
+plt.title("ORO AJUSTADO POR INFLACIÓN", fontweight="bold")
+plt.plot(gld_adj2["gold_inflation_adj"], c="g")
+plt.ylabel("U$S actuales por onza")
+plt.xlabel("Fecha")
+plt.show()
