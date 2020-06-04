@@ -86,8 +86,8 @@ plt.show()
 #   PREPARACION DE DATOS PARA EL GRAFICO 3
 #==============================================================================
 #Crisis subprime de 2008
-fecha_max_08 = merv.Merval_dlr.loc["2008-01-05":"2010-01-05"].idxmax()
-fecha_min_08 = merv.Merval_dlr.loc["2008-01-05":"2010-01-05"].idxmin()
+fecha_max_08 = merv.Merval_dlr.loc["2007-01-05":"2010-01-05"].idxmax()
+fecha_min_08 = merv.Merval_dlr.loc["2007-01-05":"2010-01-05"].idxmin()
 max_precrisis_08 = merv.Merval_dlr.loc["2008-01-05":"2010-01-05"].max()
 min_crisis_08 = merv.Merval_dlr.loc["2008-01-05":"2010-01-05"].min()
 
