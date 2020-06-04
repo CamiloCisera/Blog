@@ -205,4 +205,4 @@ tabla.columns = ["Fecha px max", "Fecha px min", "Px max",
 
 tabla = tabla.sort_values("Suba potencial hasta max", ascending=False).round(2)
 
-print('\n', tabla)
+print(tabla)
