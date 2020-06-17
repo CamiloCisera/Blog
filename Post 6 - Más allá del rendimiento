@@ -1,0 +1,115 @@
+import pandas as pd, numpy as np
+import datetime as dt
+import matplotlib.pyplot as plt
+
+#Caracteristicas para los graficos
+plt.style.use('seaborn-white')
+plt.rcParams['figure.figsize'] = [10,8]
+plt.rcParams["font.weight"] = "bold"
+plt.rcParams["axes.labelweight"] = "bold"
+plt.rcParams["font.size"] = 18
+plt.rcParams["axes.labelweight"] = "bold"
+
+#======================
+# Datos para el modelo:
+años = 35
+tasa = 0.05
+ahorro_por_año = 1200
+#======================
+# Fórmula rápida
+Valor_presente = ahorro_por_año*((1/tasa)-(1/(tasa*(1+tasa)**años)))
+Valor_futuro = Valor_presente * (1+tasa) ** años
+print(f"En {años} años vas a tener U$S {round(Valor_futuro,2)}")
+#======================
+año = np.arange(2020,2020+años)
+
+Datos = pd.DataFrame(año, columns=["Año"])
+Datos["Ahorro_anual"] = ahorro_por_año
+Datos["Ahorro_acumulado"] = Datos["Ahorro_anual"].cumsum()
+
+Ahorro_total = []
+
+for i in range(len(Datos)):
+    if i == 0:
+        Ahorro_total.append(ahorro_por_año)
+    else:
+        total = Ahorro_total[i-1] * (1+tasa) + ahorro_por_año
+        Ahorro_total.append(total)
+        
+Datos["Ahorro_total"] = Ahorro_total
+Datos["Intereses"] = Datos["Ahorro_total"] - Datos["Ahorro_acumulado"]
+Datos["Interes_del_año"] = Datos["Intereses"] - Datos["Intereses"].shift(1)
+
+#====GRAFICOS==================================================================
+r = Datos.index+1
+
+#grafico1
+plt.bar(r, Datos["Ahorro_total"], color="darkblue",
+        label="Capital")
+plt.text(2,80000,"U$S 1.200 anuales al 5% de tasa")
+plt.title("La fuerza del interés compuesto", fontweight="bold", fontsize=22)
+plt.legend()
+plt.ylabel("U$S", fontsize=20)
+plt.xlabel("Años", fontsize=20)
+plt.show()
+
+#grafico2
+plt.bar(r, Datos["Ahorro_anual"], color="orangered",
+        label="Ahorro")
+plt.bar(r, Datos["Interes_del_año"], bottom=Datos["Ahorro_anual"],
+        color="darkblue",
+        label="Intereses")
+plt.title("Resultado por año", fontweight="bold", fontsize=22)
+plt.ylabel("Aumento del capital", fontsize=20)
+plt.xlabel("Años", fontsize=20)
+plt.legend(ncol=2)
+plt.show()
+
+#GRAFICO AHORRO VS INTERESES AÑO A AÑO COMO PORCENTAJE DEL TOTAL
+tabla = pd.DataFrame({"Ahorro": Datos["Ahorro_anual"], 
+                      "Intereses": Datos["Interes_del_año"]})
+
+plt.bar(r, tabla.div(tabla.sum(1).astype(float),axis=0)["Ahorro"],
+        color="orangered", label="Ahorro")
+plt.bar(r, tabla.div(tabla.sum(1).astype(float),axis=0)["Intereses"],
+        bottom=tabla.div(tabla.sum(1).astype(float),axis=0)["Ahorro"],
+        color="darkblue", label="Intereses")
+plt.title("Resultado por ahorro vs intereses", fontweight="bold", fontsize=22)
+plt.axhline(0.5, c="k", ls="--")
+plt.ylabel("% del total", fontsize=20)
+plt.xlabel("Año", fontsize=20)
+plt.legend(ncol=2, frameon=True, loc=8)
+plt.show()
+
+#==============================================================================
+#           EFECTO DEL AZAR
+#==============================================================================
+np.random.seed(28) #Semilla, define una serie puntual de números aleatorios
+
+def aleatorios(mu=0.05, sigma=0.06, cantidad=10):
+    DF = pd.DataFrame()
+    for x in range(cantidad):
+        rendimientos = np.random.normal(mu, sigma, años)
+        Data = pd.DataFrame(rendimientos, columns=["Rendimientos"])
+        Data["Ahorro_anual"] = ahorro_por_año
+        Data["Ahorro_acumulado"] = Data["Ahorro_anual"].cumsum()
+        Ahorro_total = []
+        for i in range(len(Data)):
+            if i == 0:
+                Ahorro_total.append(ahorro_por_año)
+            else:
+                total = Ahorro_total[i-1] * (1+rendimientos[i]) + ahorro_por_año
+                Ahorro_total.append(total)
+        DF["combinacion"+str(x)] = Ahorro_total
+    return DF
+
+azar = aleatorios(cantidad=200)
+azar.loc[34].min()
+
+plt.bar(Datos.index, Datos["Ahorro_total"], color="lightgrey")
+plt.plot(azar)
+plt.axvline(10, ls="--", c="k", ymin=0.06, ymax=0.19)
+plt.title("200 simulaciones de 5% anual con desvío estandar de 6%",
+          fontweight="bold", fontsize=22)
+plt.xlabel("Años", fontweight="bold", fontsize=20)
+plt.ylabel("U$S", fontweight="bold", fontsize=20)
