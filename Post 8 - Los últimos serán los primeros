@@ -1,0 +1,186 @@
+#==============================================================================
+#           Código compartido entre Juan Pablo Pisano y Camilo Cisera
+#                        
+#==============================================================================
+
+import pandas as pd, numpy as np
+import datetime as dt
+import yfinance as yf
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+plt.rcParams['figure.figsize'] = [12,6]
+plt.rcParams["font.weight"] = "bold"
+plt.rcParams["axes.labelweight"] = "bold"
+plt.rcParams["font.size"] = 15
+
+'''
+Compara el yield buy & hold de cartera vs rotar 5 mejores o 5 peores de semana anterior
+'''
+
+años = 11
+start = dt.date.today()-dt.timedelta(365*años)
+end = dt.date.today()
+
+tickers = ["GGAL", "BMA", "YPF", "TGS", "CRESY", "MELI", "IRS", "TEO", "EDN", "BBAR", "TX"]
+
+dataDaily =  yf.download(tickers, start=start, end=end)['Adj Close']
+data = dataDaily.resample('1W').last()
+yields = data.pct_change()
+
+yieldsPast = yields.shift()
+
+best, worst = pd.DataFrame(), pd.DataFrame()
+for idx, row in yieldsPast.iterrows():
+    ordenadas = row.sort_values()
+    best5_tickers = list(ordenadas.index[-5:])
+    worst5_tickers = list(ordenadas.index[:5])
+    week = yields.loc[yields.index==idx]
+    weekBest = week.transpose().loc[best5_tickers]
+    weekWorst = week.transpose().loc[worst5_tickers]
+    worst = pd.concat([worst, weekWorst],axis=1)
+    best = pd.concat([best, weekBest],axis=1)
+
+comision = 0.00
+best = best.transpose()
+worst = worst.transpose()
+best['yield']= best.mean(axis=1) -comision
+worst['yield']= worst.mean(axis=1) -comision
+yields['yield']= yields.mean(axis=1) -comision
+
+results = pd.DataFrame()
+results.loc['Buy & Hold','CAGR'] = (yields['yield']+1).prod()**(1/años)-1
+results.loc['Best 5 Portfolio','CAGR'] = (best['yield']+1).prod()**(1/años)-1
+results.loc['Worst 5 Portfolio','CAGR'] = (worst['yield']+1).prod()**(1/años)-1
+
+best['yieldAcum'] = (best['yield']+1).cumprod()-1
+worst['yieldAcum'] = (worst['yield']+1).cumprod()-1
+yields['yieldAcum'] = (yields['yield']+1).cumprod()-1
+
+#Grafico1 = Total 2009-actualidad
+plt.plot(worst.yieldAcum,  lw=1, c='red', label='Comprar los peores 5 de la semana previa')
+plt.plot(yields.yieldAcum,  lw=1, c='b', label='Comprar y rebalancear todas')
+plt.plot(best.yieldAcum, lw=1, c='green', label='Comprar los mejores 5 de la semana previa')
+plt.title("Estrategias de rebalanceo semanal", fontsize=16, fontweight="bold")
+plt.scatter(worst.index[-1], worst.yieldAcum[-1], c="r", edgecolors="k")
+plt.scatter(best.index[-1], best.yieldAcum[-1], c="green", edgecolors="k")
+plt.scatter(yields.index[-1], yields.yieldAcum[-1], c="b", edgecolors="k")
+plt.text(dt.date(2020,6,10), 8, f'{int(worst.yieldAcum[-1]*100)}%', c="r")
+plt.text(dt.date(2020,6,10), 2.5, f'{int(yields.yieldAcum[-1]*100)}%', c="b")
+plt.text(dt.date(2020,6,10), 0, f'{int(best.yieldAcum[-1]*100)}%', c="g")
+plt.ylabel("Rendimiento", fontsize=16, fontweight="bold")
+plt.xlabel("Fecha", fontsize=16, fontweight="bold")
+plt.legend(fontsize=16)
+plt.show()
+
+#Preparo grafico 2 = crisis 2011-2012
+best['yieldAcum'] = (best['yield']+1).cumprod()      #Saco los "-1" del final
+worst['yieldAcum'] = (worst['yield']+1).cumprod()    #Saco los "-1" del final
+yields['yieldAcum'] = (yields['yield']+1).cumprod()  #Saco los "-1" del final
+
+base1 = pd.DataFrame()
+base1["B&H"] = yields.yieldAcum / yields.yieldAcum.loc["2011-01-16"]
+base1["Best"] = best.yieldAcum / best.yieldAcum.loc["2011-01-16"]
+base1["Worst"] = worst.yieldAcum / worst.yieldAcum.loc["2011-01-16"]
+#Grafico2
+plt.plot(base1["Worst"].loc["2011-01-17":"2012-11-16"],  lw=1.2, c='r',
+        label='Comprar los peores 5 de la semana previa')
+plt.plot(base1["B&H"].loc["2011-01-17":"2012-11-16"],  lw=1.2, c='b',
+        label='Comprar todas')
+plt.plot(base1["Best"].loc["2011-01-17":"2012-11-16"], lw=1.2, c='g',
+        label='Comprar los mejores 5 de la semana previa')
+plt.title("Estrategias de rebalanceo semanal (Crisis 2011/2012)",
+          fontsize=16, fontweight="bold")
+plt.legend(fontsize=16)
+plt.ylabel("Enero de 2011 = 1",fontsize=16, fontweight="bold")
+plt.show()
+
+#Preparo grafico 3 = Recuperación 2012-2018
+base1b = pd.DataFrame()
+base1b["B&H"] = yields.yieldAcum / yields.yieldAcum.loc["2012-11-11"]
+base1b["Best"] = best.yieldAcum / best.yieldAcum.loc["2012-11-11"]
+base1b["Worst"] = worst.yieldAcum / worst.yieldAcum.loc["2012-11-11"]
+#Grafico3
+plt.plot(base1b["Worst"].loc["2012-11-12":"2018-01-31"],  lw=1, c='r',
+        label='Comprar los peores 5 de la semana previa')
+plt.plot(base1b["B&H"].loc["2012-11-12":"2018-01-31"],  lw=1, c='b',
+        label='Comprar todas')
+plt.plot(base1b["Best"].loc["2012-11-12":"2018-01-31"], lw=1, c='g',
+        label='Comprar los mejores 5 de la semana previa')
+plt.title("Estrategias de rebalanceo semanal (Recuperación 2012-2018)",
+          fontsize=16, fontweight="bold")
+plt.legend(fontsize=16)
+plt.ylabel("Noviembre de 2012 = 1",fontsize=16, fontweight="bold")
+plt.show()
+
+#Preparo grafico 4 = Crisis 2018-¿2020?
+base1c = pd.DataFrame()
+base1c["B&H"] = yields.yieldAcum / yields.yieldAcum.loc["2018-01-28"]
+base1c["Best"] = best.yieldAcum / best.yieldAcum.loc["2018-01-28"]
+base1c["Worst"] = worst.yieldAcum / worst.yieldAcum.loc["2018-01-28"]
+#Grafico4
+plt.plot(base1c["Worst"].loc["2018-01-29":],  lw=1, c='r',
+         label='Comprar los peores 5 de la semana previa')
+plt.plot(base1c["B&H"].loc["2018-01-29":],  lw=1, c='b',
+         label='Comprar todas')
+plt.plot(base1c["Best"].loc["2018-01-29":], lw=1, c='g',
+         label='Comprar los mejores 5 de la semana previa')
+plt.title("Estrategias de rebalanceo semanal (Crisis 2018-2020)",
+          fontsize=16, fontweight="bold")
+plt.legend(fontsize=16)
+plt.ylabel("Enero de 2018 = 1",fontsize=16, fontweight="bold")
+plt.show()
+
+#Grafico por años
+columns = 3
+rows = años//columns+1
+fig2, ax2 = plt.subplots(figsize=(14,4*rows),nrows=rows, ncols=columns)
+for i in range(años+1):
+    dtFrom = dt.datetime(end.year-años +i , 1 , 1)
+    dtTo = dt.datetime(end.year-años +i +1 , 1 , 1)
+    yieldsYr = (yields.loc[(yields.index > dtFrom)&(yields.index < dtTo)]).copy()
+    bestYr = (best.loc[(best.index > dtFrom)&(best.index < dtTo)]).copy()
+    worstYr = (worst.loc[(worst.index > dtFrom)&(worst.index < dtTo)]).copy()
+    bestYr['yieldAcum'] = (bestYr['yield']+1).cumprod()-1
+    worstYr['yieldAcum'] = (worstYr['yield']+1).cumprod()-1
+    yieldsYr['yieldAcum'] = (yieldsYr['yield']+1).cumprod()-1    
+    row = i//columns
+    col = i%columns
+    ax2[row][col].plot(yieldsYr.yieldAcum,  lw=1, c='b')
+    ax2[row][col].plot(bestYr.yieldAcum,  lw=1, c='g')
+    ax2[row][col].plot(worstYr.yieldAcum,  lw=1, c='r')
+    ax2[row][col].set_title(str(end.year-años +i), y=0.83, fontsize=20, alpha=1, c="k")
+    plt.setp(ax2[row][col].get_xticklabels(), visible=False)    
+print(results)
+
+#====================================================================
+#           correlaciones y covarianzas
+#====================================================================
+yields = dataDaily.pct_change()
+pearson = yields.groupby([yields.index.year,yields.index.month]).corr()
+covarianzas = yields.groupby([yields.index.year,yields.index.month]).cov()*100
+rendimientos = yields.groupby([yields.index.year,yields.index.month]).mean()*100
+
+años = list(yields.index.year.unique())
+idx = pd.MultiIndex.from_product( [años, list(range(1,13)) ])
+dfCov = pd.DataFrame(np.nan, idx, ['Media'])
+dfPearson = pd.DataFrame(np.nan, idx, ['Media'])
+dfYields = pd.DataFrame(np.nan, idx, ['Media'])
+
+for año in años:
+    for mes in range(1,13):
+        try:
+            dfCov.loc[año,mes]['Media'] = round(covarianzas.loc[año,mes].mean().mean(),2)
+            dfPearson.loc[año,mes]['Media'] = round(pearson.loc[año,mes].mean().mean(),2)
+            dfYields.loc[año,mes]['Media'] = round(rendimientos.loc[año,mes].mean(),2)
+        except:
+            pass
+
+df = pd.concat([dfCov,dfPearson,dfYields], axis=1).dropna()
+df.columns = ['Covarianzas','Pearson','Yield']
+df['Percentil Yield ABS']  = df.Yield.abs().rank(pct=True).round(2)*100
+
+top10_Pearson = df.sort_values('Pearson', ascending=False).head(10)
+top10_Covarianzas = df.sort_values('Covarianzas', ascending=False).head(10)
+
+print(top10_Pearson, '\n', top10_Pearson.mean())
+print(top10_Covarianzas, '\n', top10_Covarianzas.mean())
