@@ -1,0 +1,320 @@
+import pandas as pd, numpy as np
+import datetime as dt
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+plt.rcParams["font.weight"] = "bold"
+plt.rcParams["axes.labelweight"] = "bold"
+plt.rcParams['font.size'] = 14
+plt.rcParams['figure.figsize'] = [12,6]
+
+#==============================================================================
+#       Metro cuadrado (M2)
+#==============================================================================
+
+datos_m2 = pd.read_excel("/Users/cx/Downloads/precio_m2.xlsx", index_col=0) # Completar con tu ruta al archivo
+
+plt.plot(datos_m2["Precio_M2"], c="b", lw=1.5)
+plt.ylim(ymin=0)
+plt.annotate("Crisis Rusia 1998",
+             weight ='bold', xy=(dt.date(1998,9,10), 1000), xytext=(dt.date(1994,1,6), 700),
+             arrowprops=dict(arrowstyle="->", color="k"))
+plt.annotate("Crisis 2001",
+             weight ='bold', xy=(dt.date(2001,12,21), 500), xytext=(dt.date(1999,1,6), 250),
+             arrowprops=dict(arrowstyle="->", color="k"))
+plt.annotate("Crisis 2008",
+             weight ='bold', xy=(dt.date(2008,11,19), 1460), xytext=(dt.date(2008,1,6), 1000),
+             arrowprops=dict(arrowstyle="->", color="k"))
+plt.annotate("Crisis Eurozona 2012",
+             weight ='bold', xy=(dt.date(2012,11,16), 2000), xytext=(dt.date(2012,1,6), 1600),
+             arrowprops=dict(arrowstyle="->", color="k"))
+plt.annotate("Crisis actual",
+             weight ='bold', xy=(dt.date(2018,6,16), 2600), xytext=(dt.date(2017,7,6), 2200),
+             arrowprops=dict(arrowstyle="->", color="k"))
+plt.annotate("Devaluación Duhalde",
+             weight ='bold', xy=(dt.date(2002,1,3), 1000), xytext=(dt.date(1999,1,6), 1300),
+             arrowprops=dict(arrowstyle="->", color="k"))
+plt.annotate("Devaluación Kicillof",
+             weight ='bold', xy=(dt.date(2014,1,3), 2100), xytext=(dt.date(2010,1,6), 2500),
+             arrowprops=dict(arrowstyle="->", color="k"))
+plt.title("Precio promedio del metro cuadrado en Argentina", fontweight="bold", fontsize=16)
+plt.ylabel("U$S por M2")
+plt.xlabel("Fecha")
+plt.legend()
+plt.show()
+
+años = len(datos_m2)/12
+retorno_m2 = datos_m2["Precio_M2"][-1] / datos_m2["Precio_M2"].iloc[0:24].mean() -1
+cagr_m2 = (1+retorno_m2)**(1/años) -1
+print('\n'+f'El metro cuadrado subió a un ritmo de {round(cagr_m2*100,2)}% anual')
+
+datos_m2_anual = datos_m2.resample("Y").last()
+var_anual = datos_m2_anual.pct_change()
+var_anual.dropna(inplace=True)
+var_anual.columns = (["var"])
+
+vol = var_anual["var"].std()
+
+lista = var_anual.index.year
+plt.bar(lista, var_anual["var"]*100, color="b")
+plt.title("Variacion anual del metro cuadrado en Argentina")
+plt.ylabel("%")
+plt.grid(True)
+plt.show()
+
+#==============================================================================
+#       Merval
+#==============================================================================
+
+merv = pd.read_excel("/Users/cx/Downloads/merval_actualizado.xlsx",
+                     index_col=0)        # Completar con tu ruta al archivo
+
+var_anual_merv = pd.DataFrame(merv["Merval_dlr"].resample("Y").last())
+var_anual_merv["var_merv"] = var_anual_merv["Merval_dlr"].pct_change()
+var_anual_merv.dropna(inplace=True)
+
+vol_merval = var_anual_merv["var_merv"].std()
+
+anuales = pd.merge(left=var_anual, right=var_anual_merv["var_merv"], how="inner",
+                   left_on="Date", right_on="Date")
+
+eje_x = anuales.index.year
+plt.bar(eje_x+0.25, anuales["var"]*100, width=0.35, align="center", color="b", label="Metro cuadrado")
+plt.bar(eje_x-0.25, anuales["var_merv"]*100, width=0.35, align="center", color="r", label="Merval")
+plt.legend()
+plt.grid(True)
+plt.ylabel("variación porcentual")
+plt.xlabel("Años")
+plt.title("Variaciones anuales en dólares", fontweight="bold", fontsize=18)
+plt.legend()
+plt.show()
+
+corr_ = anuales["var_merv"].corr(anuales["var"])
+print('\n'+f'Correlacion entre variacion anual del M2 y del Merval es de {round(corr_*100,2)}%')
+
+#==============================================================================
+#       IDEA: rebalanceo de Inmuebles y Merval
+#==============================================================================
+
+merv_mensual = pd.DataFrame(merv["Merval_dlr"].resample("M").last())
+
+mensuales = pd.merge(left=datos_m2["Precio_M2"], right=merv_mensual["Merval_dlr"], how="outer",
+                     left_on="Date", right_on="Date")
+mensuales.sort_index(inplace=True)
+mensuales["Precio_M2"].fillna(method="ffill", inplace=True)
+mensuales.dropna(inplace=True)
+
+#=======REBALANCEO=============================================================
+proporciones = [0.2, 0.8] # Primero acciones, segundo propiedades
+# Si suman menos de 1 se considera que el resto es cash
+
+capital_inicial = 1000000
+capital = capital_inicial
+comision_bolsa = 0.01
+comision_inmuebles = 0.02
+acciones = []
+fecha = []
+MER = mensuales["Merval_dlr"][0]
+PROP = mensuales["Precio_M2"][0]
+acciones2 = [proporciones[0]*capital/MER,
+             proporciones[1]*capital/PROP]
+acciones.append(acciones2)
+fecha.append(mensuales.index[0])
+
+#==============================================================================
+año = mensuales.index[0].year
+for i in range(len(mensuales)):
+    if año != mensuales.index[i].year:
+        MER_var = mensuales["Merval_dlr"][i]/ MER -1
+        PROP_var = mensuales["Precio_M2"][i]/ PROP -1
+        resultado_anual = (proporciones[0]*MER_var + proporciones[1]*PROP_var)
+        capital = capital*(1+resultado_anual)
+        print("Fecha ", mensuales.index[i])
+        print(f'El capital invertido es de U$S {round(capital,2)}')
+        MER = mensuales["Merval_dlr"][i]
+        PROP = mensuales["Precio_M2"][i]   
+        acciones2 = [proporciones[0]*capital/MER,
+                     proporciones[1]*capital/PROP]
+        acciones.append(acciones2)
+        fecha.append(mensuales.index[i])
+        print(acciones2)
+    año = mensuales.index[i].year
+#==============================================================================
+
+cantidades = pd.DataFrame(acciones, index=fecha,
+                          columns=["n_MER","n_PROP"])
+
+#CALCULO DE COMISIONES
+for i in range(len(cantidades)):
+    if i == 0:
+        precio_MER = mensuales.loc[cantidades.index[i]]["Merval_dlr"]
+        precio_PROP = mensuales.loc[cantidades.index[i]]["Precio_M2"]
+        comision_MER = cantidades["n_MER"][i]*precio_MER*comision_bolsa
+        comision_PROP = cantidades["n_PROP"][i]*precio_PROP*comision_inmuebles
+        comisiones = [comision_MER + comision_PROP]
+    elif i != 0:
+        precio_MER = mensuales.loc[cantidades.index[i]]["Merval_dlr"]
+        precio_PROP = mensuales.loc[cantidades.index[i]]["Precio_M2"]
+        comision_MER = abs(cantidades["n_MER"][i]-cantidades["n_MER"][i-1])*precio_MER*comision_bolsa
+        comision_PROP = abs(cantidades["n_PROP"][i]-cantidades["n_PROP"][i-1])*precio_PROP*comision_inmuebles
+        comisiones.append(comision_MER + comision_PROP)
+
+comisiones_df = pd.DataFrame(comisiones, index=fecha,
+                             columns=["comisiones"])
+comisiones_df["comisiones_acumuladas"] = comisiones_df["comisiones"].cumsum()
+comisiones_df = comisiones_df.drop(["comisiones"], axis=1)
+# Supone que las comisiones se pagan en efectivo, sin vender activos.
+#==============================================================================
+cartera_casi_final = pd.merge(left=mensuales, right=cantidades, how="outer",
+                         left_on="Date", right_on=cantidades.index)
+
+cartera_total = pd.merge(left=cartera_casi_final, right=comisiones_df, how="outer",
+                         left_on="Date", right_on=comisiones_df.index)
+
+cartera_total.set_index("Date", inplace=True)
+cartera_total.fillna(method="ffill", inplace=True)
+
+cash = (1-(proporciones[0]+proporciones[1]))*capital_inicial
+cartera_total["total"] = (cash + cartera_total["Merval_dlr"]*cartera_total["n_MER"] +
+                          cartera_total["Precio_M2"]*cartera_total["n_PROP"] - 
+                          cartera_total["comisiones_acumuladas"])
+
+#================PASO A BASE 1 PARA GRAFICAR==================================
+pfolio = cartera_total.copy()
+pfolio["base_1"] = pfolio["total"] / pfolio["total"].iloc[0]
+pfolio["Metro_cuadrado"] = pfolio["Precio_M2"] / pfolio["Precio_M2"].iloc[0]
+
+plt.plot(pfolio["base_1"], label="80/20", c="b")
+plt.scatter(pfolio.index[-1], pfolio["base_1"][-1], c="b")
+plt.plot(pfolio["Metro_cuadrado"], lw=0.7, label="Metro cuadrado", c="r")
+plt.scatter(pfolio.index[-1], pfolio["Metro_cuadrado"][-1], c="r")
+plt.text(dt.date(2008,1,1),0.5, "Incluye comisión 1% acciones - 2% propiedades")
+plt.legend()
+plt.title("Comparación con rebalanceo anual 80% inmuebles - 20% Merval",
+          fontsize=18, fontweight="bold")
+plt.ylabel("Base Octubre 1996 = 1")
+plt.xlabel("Fecha")
+plt.show()
+
+#===========MÉTRICAS DE RENDIMIENTO PARA COMBINACIÓN===========================
+yields = pfolio["total"].pct_change()
+vol_anual = yields.std() * np.sqrt(12)
+
+accum = pfolio["total"][-1] / pfolio["total"][0] -1
+años = (mensuales.index[-1] - mensuales.index[0]).days/365
+cagr = ((1+accum)**(1/años))-1
+
+risk_free = 0.0214 
+sharpe = (cagr - risk_free)/vol_anual
+
+calc_caidas = pfolio.copy()
+calc_caidas["max_acumulado"] = calc_caidas["total"].cummax()
+calc_caidas["desde_max"] = (calc_caidas["total"] / calc_caidas["max_acumulado"] -1)*100 
+perdida_maxima = calc_caidas["desde_max"].min()
+año_p_max = calc_caidas["desde_max"].idxmin().year
+mes_p_max = calc_caidas["desde_max"].idxmin().month
+
+print("\n"+"Tu cartera está compuesta por:")
+print(f"{proporciones[0]*100}% acciones y {proporciones[1]*100}% inmuebles")
+print("\n"+"Métricas de tu combinación:"+"\n"+f"CAGR = {round(cagr*100,2)}%")
+print(f"Retorno total = {round(accum*100,2)}%")
+print(f"""Volatilidad = {round(vol_anual*100,2)}%
+Sharpe = {round(sharpe,2)}
+Pérdida máxima = {round(perdida_maxima,2)}% en {mes_p_max}/{año_p_max}""")
+
+#==============================================================================
+#       IDEA: Tradear Merval "barato" + inmuebles
+#==============================================================================
+merv = merv.drop(["Merval", "contado con liqui"], axis=1)
+
+# Calculo de promedio acumulado para el Merval
+merv["cum_sum"] = merv["Merval_dlr"].cumsum()
+cum_mean = []
+for i in range(len(merv)):
+    if i<=378:
+        cum_mean.append(np.nan)
+    if i>378:
+     cum_mean.append(merv["cum_sum"][i]/(1+i))
+merv["cum_mean"] = cum_mean  
+
+merv = pd.merge(left=merv, right=mensuales["Precio_M2"], how="outer",
+                left_on="Date", right_on="Date")
+merv.sort_index(inplace=True)
+merv.fillna(method="backfill", inplace=True)
+
+# BACKTEST & GRAFICO
+posicion = "Inmuebles"
+retorno = [0]
+valores_comprado_merval = [np.nan] # para graficar
+valores_comprado_propiedades = [merv["Precio_M2"][0]] # para graficar
+valor_compra = 330
+
+for i in range(1, len(merv)):
+    if posicion == "Inmuebles":
+        retorno.append((merv["Precio_M2"][i]/merv["Precio_M2"][i-1])-1)
+        valores_comprado_merval.append(np.nan)
+        valores_comprado_propiedades.append(merv["Precio_M2"][i])
+        if merv["Merval_dlr"][i] <= valor_compra:
+            posicion="Acciones"
+    elif posicion == "Acciones":
+        valores_comprado_merval.append(merv["Merval_dlr"][i])
+        valores_comprado_propiedades.append(np.nan)
+        if merv["Merval_dlr"][i] >= merv["cum_mean"][i]:
+            posicion = "Inmuebles"
+            retorno.append((merv["cum_mean"][i]/merv["Merval_dlr"][i])-1)
+        else:
+            retorno.append((merv["Merval_dlr"][i]/merv["Merval_dlr"][i-1])-1)
+merv["retorno"] = retorno
+merv["comprado_merv"] = valores_comprado_merval
+merv["comprado_prop"] = valores_comprado_propiedades
+merv["retorno_acum"] = (1+merv["retorno"]).cumprod()-1
+merv["retorno_acum"].fillna(method="ffill", inplace=True)
+#tiempo con posicion en acciones
+merv["comprado_merv"].count()/len(merv)
+1-(merv["comprado_merv"].isna().sum()/len(merv))
+
+# GRAFICO
+fig, (ax1, ax2) = plt.subplots(nrows=2, sharex=True, figsize=(12,8))
+
+ax1.set(title="Merval", ylabel="U$S")
+ax1.plot(merv["Merval_dlr"], c="orange", lw=1.4, label="Merval en U$S")
+ax1.plot(merv["cum_mean"], c="k", lw=1.4, ls="--",
+         label="Promedio acumulado")
+ax1.plot(merv["comprado_merv"], c="b",
+         label="Posicion comprada", lw=1.4)
+ax1.legend()
+
+ax2.set(title="Inmuebles", ylabel="U$S", xlabel="Fecha")
+ax2.plot(merv["Precio_M2"], c="orange", lw=1.8, label="Dólares por metro cuadrado")
+ax2.plot(merv["comprado_prop"], c="b", lw=2.6, label="Posición comprada")
+ax2.legend()
+plt.show()
+
+plt.plot(merv["retorno_acum"], c="b", lw=1.4)
+plt.show()
+#==============================================================================
+#                   Metricas de la estrategia
+#==============================================================================
+
+#   CAGR (retorno anual en promedio geometrico)
+tiempo = merv.index[-1]-merv.index[1]
+tiempo = tiempo.days/365
+CAGR = ((1+merv["retorno_acum"][-1])**(1/tiempo))-1
+
+#   Volatilidad anualizada
+volatilidad_anual = merv["retorno"].std() * np.sqrt(252)
+
+#   Sharpe
+rf = 0.00
+sharpe = (CAGR - rf)/volatilidad_anual
+
+# Perdida maxima (función para calcularla)
+def perdida_max(DF):
+    df = DF.copy()
+    df["retorno_acum_max"] = (1+df["retorno_acum"]).cummax()
+    df["perdida"] = ((1+df["retorno_acum"]) - df["retorno_acum_max"])/df["retorno_acum_max"]
+    mayor_caida = df["perdida"].min()
+    fecha = df["perdida"].idxmin()
+    print(f"caida acumulada de {round(mayor_caida*100,2)}% al {fecha}")
+    return mayor_caida
+
+perdida_max(merv)
