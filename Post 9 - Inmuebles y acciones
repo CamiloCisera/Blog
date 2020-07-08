@@ -65,7 +65,7 @@ plt.show()
 #       Merval
 #==============================================================================
 
-merv = pd.read_excel("/Users/cx/Downloads/merval_actualizado.xlsx",
+merv = pd.read_excel("/Users/cx/Downloads/merval.xlsx",
                      index_col=0)        # Completar con tu ruta al archivo
 
 var_anual_merv = pd.DataFrame(merv["Merval_dlr"].resample("Y").last())
