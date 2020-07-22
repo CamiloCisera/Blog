@@ -80,8 +80,6 @@ for i in range(len(extremos)):
 
 bull_bear.columns = ["gspc"]
 
-gspc["base_1"] = gspc["Close"] / gspc["Close"].iloc[0]
-
 plt.title("Ciclos alcistas y bajistas del S&P 500", fontweight="bold")
 plt.ylabel("Ciclos comienzan con base 1")
 plt.xlabel("1927-2020")
