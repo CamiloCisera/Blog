@@ -1,0 +1,95 @@
+import pandas as pd, numpy as np
+import yfinance as yf
+import datetime as dt
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+plt.rcParams['figure.figsize'] = [12,6]
+plt.rcParams["font.weight"] = "bold"
+plt.rcParams["axes.labelweight"] = "bold"
+plt.rcParams["font.size"] = 15
+
+gspc = yf.download("^GSPC", period="max")["Close"]
+gspc = pd.DataFrame(gspc)
+gspc["max_200"] = gspc["Close"].rolling(200).max()
+gspc["min_50"] = gspc["Close"].rolling(100).min().shift(-50)
+gspc["cummin"] = gspc["Close"].cummin()
+gspc["min_futuro"] = gspc["Close"].rolling(500).min().shift(-500)
+gspc.fillna(method="ffill", inplace=True)
+
+techos = []
+pisos = []
+fecha_techos = []
+fecha_pisos = []
+fecha_maximo_temporal = []
+
+for i in range(len(gspc)):
+    if gspc["Close"][i] == gspc["max_200"][i]:
+        fecha_maximo_temporal.append(gspc.index[i])
+    if gspc["Close"][i] == gspc["min_50"][i] \
+        and gspc["Close"][i]/gspc["max_200"][i] < 0.8 \
+            and (gspc.index[i] - fecha_maximo_temporal[-1]).days > 60 \
+                and gspc["Close"][i] <= gspc["min_futuro"][i]:
+        print(("\n"+f'minimo de {gspc["Close"][i]} en {gspc.index[i]}'))
+        fecha_pisos.append(gspc.index[i])
+        pisos.append(gspc["Close"][i])
+   
+minimos = pd.DataFrame(pisos, index=fecha_pisos, columns=["extremos"])
+
+fechas_malas = [dt.date(1962,10,23), dt.date(1988,5,23), dt.date(2003,3,11)]
+minimos = minimos.drop(fechas_malas)
+
+for i in range(len(minimos)):
+    if i == 0:
+        maximo = gspc["Close"].loc[:minimos.index[i]].max()
+        fecha = gspc["Close"].loc[:minimos.index[i]].idxmax()
+        techos.append(maximo)
+        fecha_techos.append(fecha)
+        
+    elif i !=0:
+        maximo = gspc["Close"].loc[minimos.index[i-1]:minimos.index[i]].max()
+        fecha = gspc["Close"].loc[minimos.index[i-1]:minimos.index[i]].idxmax()
+        techos.append(maximo)
+        fecha_techos.append(fecha)
+
+maximos = pd.DataFrame(techos, index=fecha_techos, columns=["extremos"])
+
+extremos = pd.concat([maximos, minimos], axis=0)
+extremos.sort_index(inplace=True)
+extremos["Variacion"] = extremos["extremos"].pct_change()
+
+# SEGUNDA PARTE - PREPARAR GRAFICO
+bull_bear = pd.DataFrame()
+for i in range(len(extremos)):
+    if i == 0:
+        fecha_comienzo = gspc.index[i]
+        fecha_final = extremos.index[i]
+        ciclo = (gspc["Close"].loc[fecha_comienzo:fecha_final] / gspc["Close"].loc[fecha_comienzo])
+        bull_bear = pd.concat([bull_bear, ciclo], axis=0)
+    elif i != 0:
+        fecha_comienzo = extremos.index[i-1]
+        fecha_final = extremos.index[i]
+        ciclo = (gspc["Close"].loc[fecha_comienzo:fecha_final] / gspc["Close"].loc[fecha_comienzo])
+        bull_bear = pd.concat([bull_bear, ciclo], axis=0)
+    if i==(len(extremos)-1):
+        fecha_comienzo = extremos.index[i]
+        fecha_final = gspc.index[-1]
+        print(fecha_comienzo)
+        print(fecha_final)
+        ciclo = (gspc["Close"].loc[fecha_comienzo:fecha_final] / gspc["Close"].loc[fecha_comienzo])
+        bull_bear = pd.concat([bull_bear, ciclo], axis=0)
+
+bull_bear.columns = ["gspc"]
+
+gspc["base_1"] = gspc["Close"] / gspc["Close"].iloc[0]
+
+plt.title("Ciclos alcistas y bajistas del S&P 500", fontweight="bold")
+plt.ylabel("Ciclos comienzan con base 1")
+plt.xlabel("1927-2020")
+plt.plot(bull_bear, c="k", lw=0.2)
+plt.axhline(1, ls="--", c="k", lw=1)
+plt.fill_between(bull_bear.index, 1, bull_bear["gspc"],
+                 where= bull_bear["gspc"] > 1, color= "g")
+plt.fill_between(bull_bear.index, 1, bull_bear["gspc"],
+                 where= bull_bear["gspc"] < 1, color= "r")
+plt.axhline(0.5, c="k", ls="--")
+plt.show()
