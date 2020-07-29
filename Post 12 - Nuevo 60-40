@@ -1,0 +1,65 @@
+import pandas as pd, numpy as np
+import yfinance as yf
+import datetime as dt
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+plt.rcParams['figure.figsize'] = [12,6]
+plt.rcParams["font.weight"] = "bold"
+plt.rcParams["axes.labelweight"] = "bold"
+plt.rcParams["font.size"] = 15
+
+#==============================================================================
+# https://fred.stlouisfed.org/series/DGS30
+rate_30yr = pd.read_csv("/Users/cx/Downloads/DGS30.csv",
+                        index_col=0)
+rate_30yr.columns = ["rate"]
+rate_30yr.index = pd.to_datetime(rate_30yr.index)
+rate_30yr = rate_30yr[rate_30yr['rate'].str.contains("[0-9]")]
+rate_30yr["rate"] = rate_30yr["rate"].astype(float)
+
+# https://fred.stlouisfed.org/series/FPCPITOTLZGUSA
+infla_indx = pd.read_csv("/Users/cx/Downloads/FPCPITOTLZGUSA.csv",
+                         index_col=0)
+infla_indx.columns = ["infla"]
+infla_indx.index = pd.to_datetime(infla_indx.index)
+infla_indx = infla_indx[infla_indx.index>"1976-12-31"]
+infla_indx["infla"] = infla_indx["infla"].astype(float)
+
+real_rate = pd.merge(left=rate_30yr, right= infla_indx, how="outer",
+                     left_on="DATE", right_on="DATE")
+real_rate.sort_index(inplace=True)
+real_rate["infla"].loc["2020-01-02"] = 0.62
+real_rate["infla"] = real_rate["infla"].fillna(method="ffill")
+real_rate.dropna(inplace=True)
+real_rate["real_rate"] = (1+(real_rate["rate"]/100))/(1+(real_rate["infla"]/100))-1
+
+#Grafico
+plt.title("Tasa de interés real", fontweight="bold", c="k")
+plt.plot(real_rate["real_rate"]*100, c="b", label="Tasa real 30yr")
+plt.axhline(0, c="k", lw=1)
+plt.ylabel("Tasa (%)", c="k")
+plt.xlabel("Fecha", c="k")
+plt.legend()
+plt.show()
+
+#Grafico
+plt.title("Rendimiento Treasuries a 30 años", fontweight="bold", c="k")
+plt.plot(rate_30yr, c="b", label="Tasa 30yr")
+plt.ylabel("Tasa (%)", c="k")
+plt.xlabel("Fecha", c="k")
+plt.legend()
+plt.show()
+
+
+#Rezago del SPY
+SPY = yf.download("SPY", period="max")["Adj Close"]
+
+plt.title("Comienzo de Siglo lateral del S&P 500", c="k", fontweight="bold",
+          fontsize=19)
+plt.plot(SPY.loc["2000-01-01":"2013-04-30"], c="b", label="SPY (Incluye dividendos)")
+plt.ylabel("USD", c="k")
+plt.axhline(SPY.loc["2000-01-01":"2002-04-30"].max(), c="k", ls="--")
+plt.legend()
+plt.show()
+
+#El análisis de carteras sale de acá: https://github.com/CamiloCisera/Blog/blob/master/Post%205%20-%20C%C3%B3mo%20elegir%20inversiones%20II
