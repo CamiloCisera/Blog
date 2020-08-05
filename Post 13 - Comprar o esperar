@@ -1,0 +1,120 @@
+import pandas as pd, numpy as np
+import yfinance as yf
+import datetime as dt
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+plt.rcParams['figure.figsize'] = [12,6]
+plt.rcParams["font.weight"] = "bold"
+plt.rcParams["axes.labelweight"] = "bold"
+plt.rcParams["font.size"] = 15
+
+spy = yf.download("SPY", period="max")["Adj Close"]
+spy_df = pd.DataFrame(spy)
+
+#==============================================================================
+# Caso 1: Ahorro usd 200 mensuales y compro SPY
+#==============================================================================
+
+sr = pd.Series(pd.date_range('1993-01-29', end='2020-07-31', freq='M'))
+ahorro = pd.DataFrame(index=sr)
+ahorro["ahorro"] = 200
+ahorro["ahorro_acum"] = ahorro["ahorro"].cumsum()
+ahorro = ahorro[["ahorro_acum"]]
+
+spy_ahorro = pd.merge(left=spy_df, right=ahorro, how="outer",
+                      left_on="Date", right_on=ahorro.index)
+spy_ahorro.set_index("Date", inplace=True)
+spy_ahorro.sort_index(inplace=True)
+spy_ahorro["ahorro_acum"].fillna(method='ffill', inplace=True)
+spy_ahorro["var_diaria"] = spy_ahorro["Adj Close"].pct_change()
+spy_ahorro.dropna(inplace=True)
+
+capital = []
+for i in range(len(spy_ahorro)):
+    if i == 0:
+        capital.append(spy_ahorro['ahorro_acum'][i])
+    elif i != 0:
+        monto = capital[i-1] * (1 + spy_ahorro["var_diaria"][i]) + \
+            spy_ahorro["ahorro_acum"][i] - spy_ahorro["ahorro_acum"][i-1] 
+        capital.append(monto)
+
+spy_ahorro["compras_mensuales"] = capital
+
+#==============================================================================
+# Caso 2: Ahorro usd 200 mensuales y espero crisis para entrar
+#==============================================================================
+
+spy_ahorro["cummax"] = spy_ahorro["Adj Close"].cummax()
+
+fechas_minimos = []
+acciones_compradas = []
+reserva_invertida = []
+for i in range(len(spy_ahorro)):
+    if spy_ahorro["Adj Close"][i] / spy_ahorro["cummax"][i] < 0.8 and \
+        spy_ahorro["Adj Close"][i] <= spy_ahorro["Adj Close"].iloc[i-500:i+500].min():
+        print("\n"+"Minimo del SPY en", spy_ahorro.index[i])
+        print(f'Ahorro acumulado {spy_ahorro["ahorro_acum"][i]}')
+        fechas_minimos.append(spy_ahorro.index[i])
+        if len(reserva_invertida) == 0:
+            acciones_compradas.append(spy_ahorro["ahorro_acum"][i] / spy_ahorro["Adj Close"][i])
+        elif len(reserva_invertida) != 0:
+            capital_extra = spy_ahorro["ahorro_acum"][i] - reserva_invertida[-1]
+            print(f'Sobran {capital_extra} desde la ultima compra')
+            acciones_compradas.append(capital_extra / spy_ahorro["Adj Close"][i])
+        reserva_invertida.append(spy_ahorro["ahorro_acum"][i])  
+        
+compra_crisis = pd.DataFrame(acciones_compradas, index=fechas_minimos, columns=['acciones_comp'])
+compra_crisis["total_compradas"] = compra_crisis['acciones_comp'].cumsum()
+
+estrategia2 = []
+for i in range(len(spy_ahorro)):
+    if spy_ahorro.index[i] < compra_crisis.index[0]:
+        estrategia2.append(spy_ahorro["ahorro_acum"][i])
+    elif spy_ahorro.index[i] >= compra_crisis.index[0] \
+        and spy_ahorro.index[i] < compra_crisis.index[1]:
+        monto = spy_ahorro["Adj Close"][i] * compra_crisis["total_compradas"][0] \
+            - reserva_invertida[0] + spy_ahorro["ahorro_acum"][i]
+        estrategia2.append(monto)
+    elif spy_ahorro.index[i] >= compra_crisis.index[1] \
+        and spy_ahorro.index[i] < compra_crisis.index[2]:
+        monto = spy_ahorro["Adj Close"][i] * compra_crisis["total_compradas"][1] \
+            - reserva_invertida[1] + spy_ahorro["ahorro_acum"][i]
+        estrategia2.append(monto)
+    elif spy_ahorro.index[i] >= compra_crisis.index[2]:
+        monto = spy_ahorro["Adj Close"][i] * compra_crisis["total_compradas"][2] \
+            - reserva_invertida[2] + spy_ahorro["ahorro_acum"][i]
+        estrategia2.append(monto)
+
+spy_ahorro["esperar_crisis"] = estrategia2
+
+#==============================================================================
+plt.title("¿Compras mensuales o esperar crisis?", c="k", fontweight="bold")
+plt.plot(spy_ahorro["compras_mensuales"], label="Compras mensuales", c="b")
+plt.plot(spy_ahorro["esperar_crisis"], label="Esperar una crisis", c="r")
+plt.legend()
+plt.ylabel("U$S", c="k")
+plt.show()
+
+plt.title("3 grandes caídas del S&P 500", c="k", fontweight="bold")
+plt.plot(spy_ahorro["Adj Close"], c="b", lw=1, label="SPY con dividendos")
+for i in range(len(fechas_minimos)):
+        plt.scatter(fechas_minimos[i], spy_ahorro["Adj Close"].loc[fechas_minimos[i]],
+                    color="r", alpha=1, edgecolors="k", s=90)
+plt.legend()
+plt.ylabel("U$S", c="k")
+plt.show()
+
+#==============================================================================
+spy_df["var"] = spy_df["Adj Close"].pct_change()
+
+mayores_alzas = spy_df["var"].sort_values(ascending=False).iloc[:10]
+print("\n","Mayores alzas del SPY (%)","\n",mayores_alzas*100)
+
+plt.title("10 mayores subas", c="k", fontweight="bold")
+plt.plot(spy_df["Adj Close"], c="b", lw=1)
+for i in range(len(mayores_alzas)):
+    plt.scatter(mayores_alzas.index[i], spy_df["Adj Close"].loc[mayores_alzas.index[i]],
+                c="y", edgecolors="k", alpha=1, s=90)
+plt.legend()
+plt.show()
+#FIN!
