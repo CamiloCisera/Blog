@@ -1,0 +1,178 @@
+import pandas as pd
+import yfinance as yf
+import numpy as np
+import datetime as dt
+import matplotlib.pyplot as plt
+plt.style.use('seaborn-white')
+plt.rcParams['figure.figsize'] = [12,6]
+plt.rcParams["font.weight"] = "bold"
+plt.rcParams["axes.labelweight"] = "bold"
+plt.rcParams["font.size"] = 15
+
+#spy = yf.download("^GSPC", period="max")["Adj Close"].to_frame()
+spy = yf.download("SPY", period="max")["Adj Close"].to_frame()
+spy["SMA_200"] = spy["Adj Close"].rolling(200).mean()
+spy["return"] = spy["Adj Close"].pct_change()
+spy.dropna(inplace=True)
+#==============================================================================
+#                   Estrategia 1A: comprar cuando supera media de 200 ruedas
+#                   Vender cuando cae de la media de 200 ruedas (intradiario)
+#==============================================================================
+
+strategy_return = [spy["return"][0]]
+signal = "in"
+operaciones = 0
+for i in range(1,len(spy)):
+    if signal == "out" and spy["Adj Close"][i] < spy["SMA_200"][i]:
+        strategy_return.append(0)
+    elif  signal == "out" and spy["Adj Close"][i] >= spy["SMA_200"][i]:
+        signal = "in"
+        strategy_return.append(spy["Adj Close"][i] / spy["SMA_200"][i] -1)
+        print(f'Entrada al SPY en {spy.index[i]}')
+        operaciones += 1
+    elif signal == "in" and spy["Adj Close"][i] < spy["SMA_200"][i]:
+        strategy_return.append(spy["SMA_200"][i] / spy["Adj Close"][i-1] -1)
+        signal = "out"
+        print(f'Salida del SPY en {spy.index[i]}')
+        operaciones += 1
+    elif signal == "in" and spy["Adj Close"][i] >= spy["SMA_200"][i]:
+        strategy_return.append(spy["Adj Close"][i] / spy["Adj Close"][i-1] -1)
+
+spy["strategy_ret"] = strategy_return
+spy["cum_return"] = (1+spy["strategy_ret"]).cumprod()
+spy["buy_hold_ret"] = (1+spy["return"]).cumprod()
+
+#Grafico comparativo
+plt.title("$ 1 invertido en S&P 500 vs Estrategia", fontweight="bold")
+plt.plot(spy["cum_return"], c="orange", label="Estrategia con seguimiento continuo")
+plt.plot(spy["buy_hold_ret"], c="b", label="Comprar y mantener")
+plt.legend()
+plt.show()
+
+#==============================================================================
+#                   Estrategia 1B: comprar cuando supera media de 200 ruedas
+#                   Vender cuando cae de la media de 200 ruedas
+#                   (Se opera al día siguiente)
+#==============================================================================
+strategy_return = []
+signal = "out"
+operaciones = 0
+for i in range(len(spy)):
+    if signal == "out":
+        strategy_return.append(0)
+        if spy["Adj Close"][i] >= spy["SMA_200"][i]:
+            signal = "in"
+            print(f'Entrada al SPY en {spy.index[i]}')
+            operaciones += 1
+    elif signal == "in":
+        if spy["Adj Close"][i] < spy["SMA_200"][i]:
+            signal = "out"
+            strategy_return.append(spy["SMA_200"][i] / spy["Adj Close"][i-1] -1)
+            print(f'Salida del SPY en {spy.index[i]}')
+            operaciones += 1
+        else:
+            strategy_return.append(spy["Adj Close"][i] / spy["Adj Close"][i-1] -1)
+
+spy["strategy_ret"] = strategy_return
+spy["cum_return"] = (1+spy["strategy_ret"]).cumprod()
+spy["buy_hold_ret"] = (1+spy["return"]).cumprod()
+
+#Grafico comparativo
+plt.title("$ 1 invertido en S&P 500 vs Estrategia", fontweight="bold")
+plt.plot(spy["cum_return"], c="orange", label="Estrategia")
+plt.plot(spy["buy_hold_ret"], c="b", label="Comprar y mantener")
+plt.legend()
+plt.show()
+
+#==============================================================================
+#                    Estrategia 2 (evitar falsas señales):
+#                    venta de 25% cuando perfora el promedio
+#                    y pausa de 7 dias con el 75% restante
+#==============================================================================
+strategy2_return = []
+signal = "out"
+operaciones2 = 0
+for i in range(len(spy)):
+    if signal == "out":
+        strategy2_return.append(0)
+        if spy["Adj Close"][i] >= spy["SMA_200"][i]:
+            signal = "in"
+            print(f'Entrada al SPY en {spy.index[i]}')
+            operaciones2 += 1
+    elif signal == "in":
+        if spy["Adj Close"][i] < spy["SMA_200"][i]:
+            signal = "out_25%"
+            date = spy.index[i]
+            strategy2_return.append((spy["SMA_200"][i] / spy["Adj Close"][i-1] -1)*0.25+ \
+                                    (spy["Adj Close"][i] / spy["Adj Close"][i-1] -1)*0.75)
+            print(f'Salida parcial del SPY en {spy.index[i]}')
+            operaciones2 += 1
+        else:
+            strategy2_return.append(spy["Adj Close"][i] / spy["Adj Close"][i-1] -1)
+    elif signal == "out_25%":
+        if (spy.index[i] - date).days >= 7:
+            if spy["Adj Close"][i] > spy["SMA_200"][i]:
+                signal = "in"
+            else:
+                signal = "out"
+        strategy2_return.append((spy["Adj Close"][i] / spy["Adj Close"][i-1] -1)*0.75)
+        operaciones2 += 1
+
+spy["strategy2_ret"] = strategy2_return
+spy["cum_return2"] = (1+spy["strategy2_ret"]).cumprod()   
+        
+plt.plot(spy["cum_return"], label="Estrategia 1")
+plt.plot(spy["cum_return2"], label="Estrategia 2 (pausa 25/75)")
+plt.plot(spy["buy_hold_ret"], label="Comprar y mantener")
+plt.legend()
+plt.show()
+
+#==============================================================================
+# Metricas de rendimiento
+#==============================================================================
+
+vol_buyhold = spy["return"].std() * np.sqrt(252)
+vol_strategy1 = spy["strategy_ret"].std() * np.sqrt(252)
+vol_strategy2 = spy["strategy2_ret"].std() * np.sqrt(252)
+print()
+print('Volatilidades anualizadas')
+print(f'Comprar y mantener => {round(vol_buyhold*100,2)}%')
+print(f'Trend following con media de 200 ruedas => {round(vol_strategy1*100,2)}%')
+print(f'Trend following con pausa inicial => {round(vol_strategy2*100,2)}%')
+
+buyhold_totalret = (spy["buy_hold_ret"][-1] / spy["buy_hold_ret"][0]) -1
+strategy1_totalret = (spy["cum_return"][-1] / spy["cum_return"][0]) -1 
+strategy2_totalret = (spy["cum_return2"][-1] / spy["cum_return2"][0]) -1
+print("\n"+f'Retorno total de comprar y mantener {round(buyhold_totalret*100,2)}%')
+print(f'Retorno total de Trend following simple {round(strategy1_totalret*100,2)}%')
+print(f'Retorno total de Trend following pausada {round(strategy2_totalret*100,2)}%')
+
+tiempo = (spy.index[-1] - spy.index[0]).days/365
+CAGR_BH = ((1+buyhold_totalret) ** (1/tiempo)) -1
+CAGR_S1 = ((1+strategy1_totalret) ** (1/tiempo)) -1
+CAGR_S2 = ((1+strategy2_totalret) ** (1/tiempo)) -1
+print("\n"+f'Retorno anual de comprar y mantener {round(CAGR_BH*100,2)}%')
+print(f'Retorno anual de Trend following simple {round(CAGR_S1*100,2)}%')
+print(f'Retorno anual de Trend following pausada {round(CAGR_S2*100,2)}%')
+
+
+spy["cummax_bh"] = spy["buy_hold_ret"].cummax()
+spy["bajas_bh"] = (spy["buy_hold_ret"] / spy["cummax_bh"]) -1
+max_dd_bh = spy["bajas_bh"].min()
+
+spy["cummax_s1"] = spy["cum_return"].cummax()
+spy["bajas_s1"] = (spy["cum_return"] / spy["cummax_s1"]) -1
+max_dd_s1 = spy["bajas_s1"].min()
+
+spy["cummax_s2"] = spy["cum_return2"].cummax()
+spy["bajas_s2"] = (spy["cum_return2"] / spy["cummax_s2"]) -1
+max_dd_s2 = spy["bajas_s2"].min()
+
+print("\n"+f'Caida maxima de comprar y mantener {round(max_dd_bh*100,2)}%')
+print(f'Caida maxima de Trend following simple {round(max_dd_s1*100,2)}%')
+print(f'Caida maxima de Trend following pausada {round(max_dd_s2*100,2)}%')
+
+prom_ops1 = operaciones / tiempo
+prom_ops2 = operaciones2 / tiempo
+print("\n"+f'Operaciones promedio x año con Trend following {round(prom_ops1,1)}')
+print(f'Operaciones promedio x año con Trend following pausada {round(prom_ops2,1)}')
