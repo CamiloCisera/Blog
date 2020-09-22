@@ -1,0 +1,118 @@
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import datetime as dt
+import copy
+
+tickers = ["GGAL", "BMA", "SUPV", "BBAR"]
+precios = {} # diccionario para guardar los datos
+
+# Importación de datos
+for i in range(len(tickers)):
+    precios[tickers[i]] = yf.download(tickers[i], period="max")["Adj Close"].to_frame()
+
+# Función para cálculo de RSI
+def RSI(DF,n):
+    "función para calcular el RSI"
+    df = DF.copy()
+    df['diff']= df['Adj Close'] - df['Adj Close'].shift(1)
+    df['gain']= np.where(df['diff']>=0,df['diff'],0)
+    df['loss']= np.where(df['diff']<0,abs(df['diff']),0)
+    avg_gain = []
+    avg_loss = []
+    gain = df['gain'].tolist()
+    loss = df['loss'].tolist()
+    for i in range(len(df)):
+        if i < n:
+            avg_gain.append(np.NaN)
+            avg_loss.append(np.NaN)
+        elif i == n:
+            avg_gain.append(df['gain'].rolling(n).mean().tolist()[n])
+            avg_loss.append(df['loss'].rolling(n).mean().tolist()[n])
+        elif i > n:
+            avg_gain.append(((n-1)*avg_gain[i-1] + gain[i])/n)
+            avg_loss.append(((n-1)*avg_loss[i-1] + loss[i])/n)
+    df['avg_gain']= np.array(avg_gain)
+    df['avg_loss']= np.array(avg_loss)
+    df['RS'] = df['avg_gain']/df['avg_loss']
+    df['RSI'] = 100 - (100/(1+df['RS']))
+    return df['RSI']
+
+# Cálculo RSI y backtesting
+price_dict = copy.deepcopy(precios)
+tickers_signal = {} #acá cargamos si estoy long o no
+tickers_ret = {} #acá vamos a cargar los rendimientos
+for ticker in tickers:
+    print("calculando RSI de",ticker)
+    price_dict[ticker]["RSI"] = RSI(price_dict[ticker],14)
+    price_dict[ticker].dropna(inplace=True)
+    tickers_signal[ticker] = "neutro"
+    tickers_ret[ticker] = []
+    
+stock = []
+fecha_compra = []
+duracion = []
+fecha_cierre = []
+resultado = []
+p_compra = 0
+p_venta = 0
+
+
+for ticker in tickers:
+    print("\n"+"calculando estrategia para ",ticker)
+    for i in range(len(price_dict[ticker])):
+        if tickers_signal[ticker] == "neutro":
+            tickers_ret[ticker].append(0)
+            if price_dict[ticker]["RSI"][i]<20:
+                tickers_signal[ticker] = "comprado"
+                print("\n"+f"Compra {ticker}")
+                print(f'precio {price_dict[ticker]["Adj Close"][i]}')
+                print(f'fecha {price_dict[ticker].index[i]}')
+                fecha_compra.append(price_dict[ticker].index[i])
+                p_compra = price_dict[ticker]["Adj Close"][i]
+                
+        elif tickers_signal[ticker] == "comprado":
+            tickers_ret[ticker].append((price_dict[ticker]["Adj Close"][i]/price_dict[ticker]["Adj Close"][i-1])-1)
+            if price_dict[ticker]["RSI"][i]>=40:
+                tickers_signal[ticker] = "neutro"
+                print(f'venta {ticker}')
+                print(f'precio {price_dict[ticker]["Adj Close"][i]}')
+                print(f'fecha {price_dict[ticker].index[i]}')
+                p_venta = price_dict[ticker]["Adj Close"][i]
+                d = (price_dict[ticker].index[i] - fecha_compra[-1]).days
+                duracion.append(d)
+                fecha_cierre.append(price_dict[ticker].index[i])
+                resultado.append(p_venta/p_compra-1)
+                stock.append(ticker)
+    price_dict[ticker]["ret"] = np.array(tickers_ret[ticker])
+    price_dict[ticker]["ret_acum"] = (1+price_dict[ticker]["ret"]).cumprod()
+
+#Datos
+datos = pd.DataFrame(stock, columns=["ticker"])
+datos["fecha_cierre"] = fecha_cierre
+datos["duracion"] = duracion
+datos["resultado"] = resultado
+
+resultado_prom = datos["resultado"].mean()
+duracion_prom = datos["duracion"].mean()
+total_trades = len(datos)
+win_trades = len(datos[datos["resultado"]>0])
+loss_trades = len(datos[datos["resultado"]<=0])
+
+print('\n'+f'La ganancia promedio es de {round(resultado_prom*100,2)}%')
+print(f'La duración promedio es de {round(duracion_prom,2)} días')
+print(f'El {round((win_trades/total_trades)*100,2)}% de las veces se sale con ganancias')
+print(f'El {round((loss_trades/total_trades)*100,2)}% de las veces se sale con perdidas')
+print(f'El peor resultado al cierre fue de {round(datos["resultado"].min()*100,2)}%')
+print(f'El mejor resultado al cierre fue de {round(datos["resultado"].max()*100,2)}%')
+
+print("\n"+"bajas durante la estrategia")
+for ticker in tickers:
+    price_dict[ticker]["max"] = price_dict[ticker]["ret_acum"].cummax()
+    price_dict[ticker]["baja"] = price_dict[ticker]["ret_acum"] / price_dict[ticker]["max"] -1
+    print(ticker, f'baja máxima de {round(price_dict[ticker]["baja"].min()*100,2)}%')
+
+# RSI Actuales
+print("\n"+"RSI actuales")
+for ticker in tickers:
+    print(ticker,"=", round(price_dict[ticker]["RSI"][-1],2))
