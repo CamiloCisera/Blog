@@ -94,12 +94,14 @@ datos["duracion"] = duracion
 datos["resultado"] = resultado
 
 resultado_prom = datos["resultado"].mean()
+std_res = datos["resultado"].std()
 duracion_prom = datos["duracion"].mean()
 total_trades = len(datos)
 win_trades = len(datos[datos["resultado"]>0])
 loss_trades = len(datos[datos["resultado"]<=0])
 
 print('\n'+f'La ganancia promedio es de {round(resultado_prom*100,2)}%')
+print(f'La desviación estandar del resultado es de {round(std_res*100,2)}%')
 print(f'La duración promedio es de {round(duracion_prom,2)} días')
 print(f'El {round((win_trades/total_trades)*100,2)}% de las veces se sale con ganancias')
 print(f'El {round((loss_trades/total_trades)*100,2)}% de las veces se sale con perdidas')
@@ -116,3 +118,5 @@ for ticker in tickers:
 print("\n"+"RSI actuales")
 for ticker in tickers:
     print(ticker,"=", round(price_dict[ticker]["RSI"][-1],2))
+    
+print("\n",datos)
