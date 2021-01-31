@@ -1,0 +1,138 @@
+import pandas as pd, numpy as np
+import yfinance as yf
+import matplotlib.pyplot as plt
+import datetime as dt
+plt.style.use('seaborn-white')
+plt.rcParams['figure.figsize'] = [12,9]
+plt.rcParams["font.weight"] = "bold"
+plt.rcParams["axes.labelweight"] = "bold"
+plt.rcParams["font.size"] = 16
+plt.rcParams["axes.labelweight"] = "bold"
+
+#=========================================
+tasas = pd.read_excel("/Users/cx/Desktop/tasasUSA.xls",
+                      index_col=0)
+
+Nasdaq = yf.download("^NDX", period="max")["Adj Close"].to_frame()
+
+#=========================================
+# Variaciones
+#=========================================
+Max_2000 = Nasdaq["Adj Close"].loc[Nasdaq["Adj Close"].loc[:"2003-12-31"].idxmax()]
+Inicio_1990 = Nasdaq["Adj Close"].loc["1990-01-02"]
+Inicio_1995 = Nasdaq["Adj Close"].loc["1995-01-03"]
+print("\n"+f'El Nasdaq 100 subió {round((Max_2000/Inicio_1990-1)*100,2)}% entre 1990 y marzo del 2000')
+print(f'y subió {round((Max_2000/Inicio_1995-1)*100,2)}% entre 1995 y marzo del 2000')
+
+annual = Nasdaq.copy()
+annual = annual.resample("Y").last()
+annual["var"] = annual["Adj Close"].pct_change()
+annual.dropna(inplace=True)
+
+print(f'Retornos del Nasdaq')
+for i in range(len(annual)):
+    if annual.index[i]>dt.date(1990,1,1) and annual.index[i]<dt.date(2004,1,1):
+        print(f'{annual.index[i].year} = {round(annual["var"].iloc[i]*100,2)}%')
+
+#==================================
+# Nasdaq 1995-2000 vs 2016-2021
+#==================================
+
+#1995-2000
+max2000 = Nasdaq["Adj Close"].loc[:"2000-12-12"].idxmax() #Maximo
+inicio = max2000 - dt.timedelta(365*5) #5 años atras
+
+Nasdaq_1995_2000 = Nasdaq.copy()
+Nasdaq_1995_2000 = Nasdaq_1995_2000.loc[inicio:max2000]
+Nasdaq_1995_2000["base1"] = Nasdaq_1995_2000["Adj Close"] / Nasdaq_1995_2000["Adj Close"].iloc[0]
+Nasdaq_1995_2000.reset_index(inplace=True)
+
+#2016-2021
+inicio2 = dt.date.today() - dt.timedelta(365*5) #5 años atras
+
+Nasdaq_2016_2021 = Nasdaq.copy()
+Nasdaq_2016_2021 = Nasdaq_2016_2021.loc[inicio2:]
+Nasdaq_2016_2021["base1"] = Nasdaq_2016_2021["Adj Close"] / Nasdaq_2016_2021["Adj Close"].iloc[0]
+Nasdaq_2016_2021.reset_index(inplace=True)
+
+plt.title("¿Y si sigue subiendo?", fontweight="bold", fontsize=20)
+plt.plot(Nasdaq_1995_2000["base1"], c="r", label="Nasdaq 1995-2000")
+plt.plot(Nasdaq_2016_2021["base1"], c="b", label="Nasdaq 2016-2021")
+plt.xlabel("Ruedas")
+plt.legend()
+plt.show()
+
+#==========================
+# Bajas en DOTCOM 2000S
+#==========================
+tickers = ["AMZN", "AAPL", "CSCO", "INTC", "MSFT"]
+tech = yf.download(tickers, start="1999-07-31", end="2003-12-12")["Adj Close"]
+
+for ticker in tickers:
+    baja = (tech[ticker].min() / tech[ticker].max() -1)*100
+    print("\n"+f'{ticker} maximo {tech[ticker].idxmax()} y minimo {tech[ticker].idxmin()}')
+    print(f'{ticker} llegó a caer {round(baja,2)}%')
+    tech[ticker+"1"] = tech[ticker] / tech[ticker].loc[tech[ticker].idxmax()]
+
+plt.title("Caídas desde máximos", fontweight="bold", fontsize=20, c="k")
+for ticker in ["AMZN", "AAPL", "CSCO", "INTC"]:
+    plt.plot(tech[ticker+"1"].loc[tech[ticker].idxmax():tech[ticker].idxmin()])
+    plt.scatter(tech[ticker].idxmin(), tech[ticker+"1"].loc[tech[ticker].idxmin()])
+    plt.text(tech[ticker].idxmin(), tech[ticker+"1"].loc[tech[ticker].idxmin()], ticker)
+plt.axhline(0.2, ls="--", lw=1, c="k")
+plt.text(dt.date(2000,1,15), 0.15, "Baja de 80%", c="k")
+plt.axhline(1, ls="--", lw=1, c="k")
+plt.text(dt.date(2002,1,15), 0.95, "Momento del máximo", c="k")
+plt.show()
+
+#==========================
+#DOTCOM 2000
+#==========================
+data = pd.merge(left=tasas, right=Nasdaq, how="outer",
+                left_on=tasas.index, right_on=Nasdaq.index)
+data.set_index("key_0", inplace=True)
+data.sort_index(inplace=True)
+
+df = data.copy()
+df = df.loc["1995-01-01":"2000-12-01"]
+df.sort_index(inplace=True)
+df.fillna(method="ffill", inplace=True)
+
+fig, ax = plt.subplots(2)
+#fig.suptitle("Dotcom 2000s", fontweight="bold")
+ax[0].set(title="Dotcom crash 2000s")
+ax[0].plot(df["Adj Close"], c="b", label="Nasdaq 100")
+ax[0].axvline(x=df["Adj Close"].idxmax(), c="k", ls="--", lw=1)
+ax[0].legend()
+ax[1].set(title="Tasa de interés (FED)", ylabel="%")
+ax[1].plot(df["Tasa FED"]*100, c="r", label="Tasa FED")
+ax[1].axvline(x=df["Adj Close"].idxmax(), c="k", ls="--", lw=1)
+
+plt.show()
+
+#========================
+#Nasdaq 2021
+#========================
+data = pd.merge(left=tasas, right=Nasdaq, how="outer",
+                left_on=tasas.index, right_on=Nasdaq.index)
+data.set_index("key_0", inplace=True)
+data.sort_index(inplace=True)
+
+df = data.copy()
+df = df.loc["2015-01-01":]
+df.sort_index(inplace=True)
+df.fillna(method="ffill", inplace=True)
+
+fig, ax = plt.subplots(2)
+#fig.suptitle("Dotcom 2000s", fontweight="bold")
+ax[0].set(title="Nasdaq 2015-2021")
+ax[0].plot(df["Adj Close"], c="b", label="Nasdaq 100")
+ax[0].axvline(x=df["Adj Close"].idxmax(), c="k", ls="--", lw=1)
+ax[0].legend()
+ax[1].set(title="Tasa de interés (FED)", ylabel="%")
+ax[1].plot(df["Tasa FED"]*100, c="r", label="Tasa FED")
+ax[1].axvline(x=df["Adj Close"].idxmax(), c="k", ls="--", lw=1)
+
+plt.show()
+
+#FIN!
