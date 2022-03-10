@@ -65,7 +65,6 @@ df['freeCashFlow'] = list(cf['freeCashFlow']/1000000000)
 df['revenue'] = list(inc['revenue']/1000000000)
 df['R&D'] = list(inc['researchAndDevelopmentExpenses']/1000000000)
 df['ebitda'] = list(inc['ebitda']/1000000000)
-df['netIncome'] = list(inc['netIncome']/1000000000)
 
 #==============================================================================
 fig, (ax1, ax2) = plt.subplots(nrows=2, sharex=True, figsize=(12,8))
