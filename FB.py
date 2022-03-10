@@ -1,7 +1,7 @@
 import pandas as pd
 import datetime as dt
 import yfinance as yf
-import requests
+import requests, time
 import matplotlib.pyplot as plt
 plt.style.use('seaborn-white')
 plt.rcParams['figure.figsize'] = [12,7]
@@ -46,11 +46,13 @@ print(fb.sort_values('dd', ascending=True)[0:5])
 profile = getProfile(ticker)
 mkt_cap = profile.loc['mktCap'][0]
 name = profile.loc['companyName'][0]
-
+time.sleep(2)
 bs = getFundamental(symbol=ticker, what='balance_sheet', period='annual')
+time.sleep(2)
 inc = getFundamental(symbol=ticker, what='income_st', period='annual')
+time.sleep(2)
 cf = getFundamental(symbol=ticker, what='cash_flow', period='annual')
-
+time.sleep(2)
 url = f'https://fmpcloud.io/api/v3/enterprise-values/{ticker}?limit=40&apikey={apikey}'
 r = requests.get(url)
 js = r.json()
@@ -93,7 +95,7 @@ for i in range(1,years+1):
     revenue.append(df.revenue[-1]*(1+rev_growth)**i)
 
 proj = pd.DataFrame(revenue, index=date, columns=['revenue'])
-proj['ebitda'] = proj['revenue']*target_margin
+proj['ebit'] = proj['revenue']*target_margin
 
 #==============================================================================
 # graph
