@@ -65,7 +65,7 @@ df['freeCashFlow'] = list(cf['freeCashFlow']/1000000000)
 df['revenue'] = list(inc['revenue']/1000000000)
 df['R&D'] = list(inc['researchAndDevelopmentExpenses']/1000000000)
 df['ebitda'] = list(inc['ebitda']/1000000000)
-
+df['ebit'] = list((inc['ebitda'] - inc['depreciationAndAmortization'])/1000000000)
 #==============================================================================
 fig, (ax1, ax2) = plt.subplots(nrows=2, sharex=True, figsize=(12,8))
 ax1.set(title=f'{name}', ylabel='USD')
@@ -84,8 +84,8 @@ plt.show()
 #==============================================================================
 #Estimates
 years = 3
-rev_growth = 0.1
-target_margin = 0.42
+rev_growth = 0.14
+target_margin = 0.33
 
 date, revenue = [], []
 for i in range(1,years+1):
@@ -101,21 +101,21 @@ fig, ax = plt.subplots(figsize=(12,6))
 ax.set_title(f'{name}', fontweight='bold')
 revs = ax.bar([i.year for i in df.index], df['revenue'], label='Revenue', align='center',
               width=0.45, color='sienna', edgecolor='k')
-ebitda = ax.bar([i.year for i in df.index], df['ebitda'], label='EBITDA', align='edge',
+ebitda = ax.bar([i.year for i in df.index], df['ebit'], label='EBIT', align='edge',
                 width=0.45, color='darksalmon', edgecolor='k')
 ax.set_ylabel('USD Bn')
 
 ax2 = ax.twinx()
-margin = ax2.plot([i.year for i in df.index], df['ebitda']/df['revenue']*100, ls='--', 
-                  c='k', lw=1.5, label='EBITDA margin')
+margin = ax2.plot([i.year for i in df.index], df['ebit']/df['revenue']*100, ls='--', 
+                  c='k', lw=1.5, label='EBIT margin')
 ax2.set_ylim(25,75)
-ax2.set_ylabel('% EBITDA margin')
+ax2.set_ylabel('% EBIT margin')
 
 revs_proj = ax.bar([i.year for i in proj.index], proj['revenue'], align='center',
                    width=0.45, color='sienna',alpha=0.9, edgecolor='k', ls='-', lw=1.2)
-ebitda_proj = ax.bar([i.year for i in proj.index], proj['ebitda'], align='edge',
+ebitda_proj = ax.bar([i.year for i in proj.index], proj['ebit'], align='edge',
                    width=0.45, color='darksalmon',alpha=0.9, edgecolor='k', ls='-', lw=1.2)
-margin_proj = ax2.plot([i.year for i in proj.index], proj['ebitda']/proj['revenue']*100, ls='--',
+margin_proj = ax2.plot([i.year for i in proj.index], proj['ebit']/proj['revenue']*100, ls='--',
                        c='k', lw=1.5)
 
 lines_1, labels_1 = ax.get_legend_handles_labels()
